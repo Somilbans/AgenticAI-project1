@@ -1,0 +1,9 @@
+pandas>=2.2
+openpyxl>=3.1
+pyxlsb>=1.0
+chromadb>=0.5
+openai>=1.50
+typer>=0.12
+flask>=3.0
+matplotlib>=3.8
+

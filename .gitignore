@@ -1,0 +1,22 @@
+# Ignore raw Excel sources
+*.xlsx
+*.xlsb
+
+# Ignore the folder(s) used for internal processing artifacts
+internal_process/
+internal process/
+
+# Ignore ingestion outputs and intermediate data
+mini_output/
+
+# Ignore local Chroma DB storage
+mini_chroma/
+
+# Ignore Python cache artifacts
+__pycache__/
+
+# Ignore generated insight assets
+insights/*.png
+
+# Ignore summary.json
+insights/summary.json
