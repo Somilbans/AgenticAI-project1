@@ -24,24 +24,29 @@ def serve(
         "0.0.0.0",
         "--host",
         "-h",
-        help="Host interface for the Flask server.",
+        help="Host interface for the FastAPI server.",
     ),
     port: int = typer.Option(
         5000,
         "--port",
         "-p",
-        help="Port for the Flask server.",
+        help="Port for the FastAPI server.",
     ),
     debug: bool = typer.Option(
         False,
         "--debug/--no-debug",
-        help="Run Flask with debug mode.",
+        help="Run FastAPI with debug mode (better error messages, detailed logging).",
+    ),
+    reload: bool = typer.Option(
+        True,
+        "--reload/--no-reload",
+        help="Enable auto-reload on file changes (works with --debug).",
     ),
 ) -> None:
     """
-    Run the Flask API that powers the React UI.
+    Run the FastAPI server that powers the React UI.
     """
-    run_server(host=host, port=port, debug=debug, auto_open=True)
+    run_server(host=host, port=port, debug=debug, auto_open=True, use_reloader=reload)
 
 
 @app.command()

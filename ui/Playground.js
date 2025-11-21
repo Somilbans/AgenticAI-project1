@@ -9,37 +9,49 @@ const PlaygroundTab = ({
   answer,
 }) => {
   const [question, setQuestion] = useState("");
-  const [collection, setCollection] = useState(collections[0].value);
+  const [mode, setMode] = useState("collection"); // "collection" or "intelligent"
+  const [collection, setCollection] = useState(collections[0]?.value || "onbench");
   const [topK, setTopK] = useState("3");
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSubmit({ question, collection, topK });
+    onSubmit({ question, mode, collection, topK });
   };
 
   return (
     <>
       <p className="hint">
-        Enter a prompt, choose Bench or Positions, and set the top-k value. We’ll craft
-        the CLI command and run the query for you.
+        Choose a query mode: Collection Based searches a specific collection, Intelligent System uses LLM to understand and match employees to positions. Set the top-k value and we'll craft the CLI command and run the query for you.
       </p>
       <form onSubmit={handleSubmit}>
+        <label>Query Mode</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="collection">Collection Based</option>
+          <option value="intelligent">Intelligent System</option>
+        </select>
+
+        {mode === "collection" && (
+          <>
+            <label>Collection</label>
+            <select value={collection} onChange={(e) => setCollection(e.target.value)}>
+              {collections.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
         <label>Question</label>
         <textarea
           rows="3"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask anything about the bench or positions..."
+          placeholder={mode === "intelligent" 
+            ? "Ask to match employees to positions or vice versa (e.g., 'Find jobs for John' or 'Who can fill Python developer role?')..."
+            : "Ask anything about the bench or positions..."}
         />
-
-        <label>Collection</label>
-        <select value={collection} onChange={(e) => setCollection(e.target.value)}>
-          {collections.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
 
         <label>Top-k</label>
         <div className="topk-control">

@@ -47,6 +47,9 @@ def upsert_dataframe(df: pd.DataFrame, collection_name: str) -> None:
     We keep it simple:
     - Document text is a pipe-delimited string of "column=value".
     - Metadata holds the original row as a dict.
+    
+    Note: This function automatically invalidates the query intent cache
+    when data is ingested, ensuring cached results are refreshed.
     """
     collection = _get_collection(collection_name)
 
@@ -65,6 +68,17 @@ def upsert_dataframe(df: pd.DataFrame, collection_name: str) -> None:
         return
 
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+    
+    # Invalidate query intent cache after data ingestion
+    try:
+        from mini_project.query_cache import get_cache
+        get_cache().invalidate_all()
+    except Exception:
+        # If cache module isn't available, continue without invalidation
+        pass
+    
+    # Note: Skill embedding pre-computation is handled in cli_ingest.py
+    # after all files are processed, to avoid redundant computation
 
 
 def _row_to_document(row: Mapping[str, Any]) -> str:

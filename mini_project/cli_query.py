@@ -25,7 +25,8 @@ def answer_from_cli(
     )
     if not docs:
         raise ValueError("No results found in Chroma.")
-    return answer_question(question, docs)
+    answer_text, _ = answer_question(question, docs)
+    return answer_text
 
 
 def resolve_top_k(value: Optional[int], interactive: bool = True) -> int:

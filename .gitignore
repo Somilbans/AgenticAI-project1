@@ -20,3 +20,9 @@ insights/*.png
 
 # Ignore summary.json
 insights/summary.json
+
+# Ignore debug log file
+debug.log
+
+# Ignore skill embeddings cache
+skill_embeddings_cache.json

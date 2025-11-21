@@ -1,16 +1,17 @@
 """
-Flask server and helpers that power the React UI + API endpoints.
+FastAPI server and helpers that power the React UI + API endpoints.
 """
 
 from __future__ import annotations
 
-import threading
-import time
-import webbrowser
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, jsonify, request, send_from_directory
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from mini_project.cli_query import (
     answer_from_cli,
@@ -24,76 +25,131 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 UI_DIR = PROJECT_ROOT / "ui"
 
 
-def create_app() -> Flask:
-    app = Flask(
-        __name__,
-        static_folder=str(UI_DIR),
-        static_url_path="",
+# Pydantic models for request/response
+class QueryRequest(BaseModel):
+    question: str
+    mode: str = "collection"  # "collection" or "intelligent"
+    collection: Optional[str] = None
+    top_k: Optional[int] = None
+    db_path: Optional[str] = None
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    meta: dict
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Bench Intelligence Hub API",
+        description="API for intelligent matching between bench employees and positions",
+        version="1.0.0",
+    )
+    
+    # Enable CORS for all routes
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
-    @app.post("/api/query")
-    def query_endpoint():
-        payload = request.get_json(force=True)
-        question = payload.get("question", "").strip()
-        collection = payload.get("collection")
-        top_k = payload.get("top_k")
-        db_path = _resolve_db_path(payload.get("db_path"))
+    # Mount static files for UI
+    app.mount("/static", StaticFiles(directory=str(UI_DIR)), name="static")
+    
+    # Mount insights assets
+    if INSIGHTS_DIR.exists():
+        app.mount("/insights", StaticFiles(directory=str(INSIGHTS_DIR)), name="insights")
+
+    @app.post("/api/query", response_model=QueryResponse)
+    async def query_endpoint(payload: QueryRequest):
+        question = payload.question.strip()
+        mode = payload.mode
+        collection = payload.collection
+        top_k = payload.top_k
+        db_path = _resolve_db_path(payload.db_path)
 
         if not question:
-            return jsonify({"error": "Question is required."}), 400
+            raise HTTPException(status_code=400, detail="Question is required.")
 
         try:
-            chosen_collection = resolve_collection(
-                collection, db_path, interactive=False
-            )
-            resolved_top_k = resolve_top_k(top_k, interactive=False)
-            answer = answer_from_cli(
-                question,
-                chosen_collection,
-                resolved_top_k,
-                db_path,
-            )
+            if mode == "intelligent":
+                # Use intelligent matching system
+                from mini_project.intelligent_match import intelligent_match
+                
+                resolved_top_k = resolve_top_k(top_k, interactive=False)
+                answer, metrics = intelligent_match(
+                    question,
+                    top_k=resolved_top_k,
+                    db_path=db_path,
+                )
+                chosen_collection = "intelligent"
+            else:
+                # Collection-based query
+                chosen_collection = resolve_collection(
+                    collection, db_path, interactive=False
+                )
+                resolved_top_k = resolve_top_k(top_k, interactive=False)
+                answer = answer_from_cli(
+                    question,
+                    chosen_collection,
+                    resolved_top_k,
+                    db_path,
+                )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            raise HTTPException(status_code=500, detail=str(exc))
 
-        return jsonify(
-            {
-                "answer": answer,
-                "meta": {
-                    "collection": chosen_collection,
-                    "top_k": resolved_top_k,
-                    "db_path": str(db_path) if db_path else None,
-                },
-            }
+        meta = {
+            "collection": chosen_collection,
+            "top_k": resolved_top_k,
+            "db_path": str(db_path) if db_path else None,
+        }
+        
+        # Add metrics if available (for intelligent mode)
+        if mode == "intelligent" and isinstance(answer, tuple):
+            answer, metrics = answer
+            meta["metrics"] = metrics
+        
+        return QueryResponse(
+            answer=answer,
+            meta=meta,
         )
 
-    @app.route("/api/collections", methods=["GET"])
-    def collections_endpoint():
-        db_path = _resolve_db_path(request.args.get("db_path"))
+    @app.get("/api/collections")
+    async def collections_endpoint(db_path: Optional[str] = None):
+        resolved_db_path = _resolve_db_path(db_path)
         try:
-            names = list(list_collections(db_path=db_path))
+            names = list(list_collections(db_path=resolved_db_path))
         except Exception as exc:
-            return jsonify({"collections": [], "error": str(exc)}), 400
-        return jsonify({"collections": names})
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"collections": names}
 
     @app.get("/api/insights")
-    def insights_endpoint():
+    async def insights_endpoint():
         summary = read_summary()
-        return jsonify(summary)
+        return summary
 
-    @app.route("/")
-    def serve_index():
-        return send_from_directory(UI_DIR, "index.html")
+    @app.get("/")
+    async def serve_index():
+        index_path = UI_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="index.html not found")
 
-    @app.route("/<path:asset_path>")
-    def serve_static(asset_path: str):
-        return send_from_directory(UI_DIR, asset_path)
-
-    @app.route("/insights/<path:asset_path>")
-    def serve_insight_assets(asset_path: str):
-        return send_from_directory(INSIGHTS_DIR, asset_path)
+    @app.get("/{asset_path:path}")
+    async def serve_static(asset_path: str):
+        """Serve static files from UI directory."""
+        file_path = UI_DIR / asset_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        # Fallback to index.html for SPA routing
+        index_path = UI_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="File not found")
 
     return app
 
@@ -102,31 +158,37 @@ def run_server(
     host: str = "0.0.0.0",
     port: int = 5000,
     debug: bool = False,
-    auto_open: bool = True,
+    auto_open: bool = False,
+    use_reloader: bool = True,
 ) -> None:
     """
-    Start the Flask server, optionally auto-opening the UI in a browser.
+    Start the FastAPI server.
+    
+    Args:
+        host: Host interface for the FastAPI server
+        port: Port for the FastAPI server
+        debug: Enable debug mode (better error messages)
+        auto_open: Automatically open browser when server starts (disabled by default)
+        use_reloader: Enable auto-reload on file changes
     """
+    import uvicorn
+    
     app = create_app()
-    if auto_open:
-        _open_browser_async(_build_ui_url(host, port))
-    app.run(host=host, port=port, debug=debug)
-
-
-def _build_ui_url(host: str, port: int) -> str:
+    
+    # Print the URL so user can open it manually
     visible_host = "127.0.0.1" if host == "0.0.0.0" else host
-    return f"http://{visible_host}:{port}/"
-
-
-def _open_browser_async(url: str) -> None:
-    def _runner():
-        time.sleep(1.0)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-
-    threading.Thread(target=_runner, daemon=True).start()
+    url = f"http://{visible_host}:{port}/"
+    print(f"\n🚀 Server starting at {url}")
+    print(f"📚 API docs available at {url}docs\n")
+    
+    # Run with uvicorn
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        reload=use_reloader and debug,
+        log_level="debug" if debug else "info",
+    )
 
 
 def _resolve_db_path(raw_path: Optional[str]) -> Optional[Path]:
@@ -137,4 +199,3 @@ def _resolve_db_path(raw_path: Optional[str]) -> Optional[Path]:
 
 if __name__ == "__main__":
     run_server()
-

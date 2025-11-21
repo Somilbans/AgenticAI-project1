@@ -60,6 +60,7 @@ def ingest_command(
 ) -> None:
     """
     Ingest spreadsheets, serialize them, and upsert rows into Chroma.
+    After ingestion, pre-computes skill embeddings for all unique skills.
     """
     targets = files or config.FILES_TO_READ
     results = _process_all(targets, output_dir)
@@ -67,6 +68,15 @@ def ingest_command(
         typer.echo("No files processed. Check the inputs and try again.")
         raise typer.Exit(code=1)
     print_summary(results)
+    
+    # Final step: Pre-compute skill embeddings after all ingestion is complete
+    try:
+        from mini_project.skill_embeddings import precompute_skill_embeddings
+        typer.echo("\n[INGESTION] Pre-computing skill embeddings for all collections...")
+        precompute_skill_embeddings(db_path=None)
+        typer.echo("[INGESTION] Skill embedding pre-computation completed.")
+    except Exception as e:
+        typer.echo(f"[INGESTION] Warning: Failed to pre-compute skill embeddings: {e}")
 
 
 def _enrich_bench_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -198,7 +208,7 @@ def _estimate_bench_experience(row: pd.Series) -> Optional[float]:
 
 def _query_llm_for_json(question: str, context: str) -> Dict[str, Optional[float]]:
     try:
-        response_text = answer_question(question, [context])
+        response_text, _ = answer_question(question, [context])
     except Exception as exc:
         typer.echo(f"[LLM] Falling back due to error: {exc}")
         return {}

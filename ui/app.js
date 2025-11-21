@@ -20,7 +20,7 @@ function App() {
   const [insightError, setInsightError] = useState("");
   const [insightLoading, setInsightLoading] = useState(false);
 
-  const handleQuery = async ({ question, collection, topK }) => {
+  const handleQuery = async ({ question, mode, collection, topK }) => {
     const trimmedQuestion = (question || "").trim();
     const topKValue = Number(topK) || 3;
 
@@ -32,7 +32,7 @@ function App() {
     const cliParts = [
       "python main.py ask",
       `"${trimmedQuestion}"`,
-      `--collection "${collection}"`,
+      mode === "intelligent" ? "--mode intelligent" : `--collection "${collection}"`,
       `--top-k ${topKValue}`,
     ];
     setCommand(cliParts.join(" "));
@@ -46,7 +46,8 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: trimmedQuestion,
-          collection,
+          mode: mode || "collection",
+          collection: mode === "intelligent" ? null : collection,
           top_k: topKValue,
         }),
       });
